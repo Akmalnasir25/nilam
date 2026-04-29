@@ -1,0 +1,239 @@
+const SPREADSHEET_ID = "ID_GOOGLE_SHEET_ANDA"; // <-- GANTIKAN DENGAN ID ANDA
+const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+const studentsSheet = ss.getSheetByName("students");
+const recordsSheet = ss.getSheetByName("nilam_records");
+
+// Fungsi utama untuk mengendalikan permintaan POST dari aplikasi web
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const action = data.action;
+    const payload = data.payload;
+
+    switch (action) {
+      case 'addRecord':
+        return addRecord(payload);
+      case 'updateRecord':
+        return updateRecord(payload);
+      case 'deleteNilamRecords':
+        return deleteNilamRecords(payload);
+      case 'uploadStudents':
+        return uploadStudents(payload);
+      case 'updateStudent':
+        return updateStudent(payload);
+      case 'deleteStudent':
+        return deleteStudent(payload);
+      case 'deleteAllSessionStudents':
+        return deleteAllSessionStudents(payload);
+      case 'deleteAllNilam':
+        return deleteAllNilamRecords();
+      default:
+        return createJsonResponse({ status: 'error', message: 'Tindakan tidak sah' });
+    }
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: `Ralat Server: ${err.message}` });
+  }
+}
+
+// Fungsi utama untuk mengendalikan permintaan GET dari aplikasi web
+function doGet(e) {
+  const action = e.parameter.action;
+  if (action === 'readAll') {
+    return readAllData();
+  }
+  return createJsonResponse({ status: 'error', message: 'Tindakan GET tidak sah' });
+}
+
+// -- HELPER FUNCTIONS --
+function getSheetData(sheet) {
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const header = data.shift().map(h => String(h).trim().toLowerCase()); // Normalize header for consistency
+  return data.map(row => {
+    let obj = {};
+    header.forEach((col, index) => {
+      obj[col] = row[index];
+    });
+    return obj;
+  });
+}
+
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function findRowById(sheet, id) {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase());
+    const idColIndex = header.indexOf('id');
+    if (idColIndex === -1) return -1;
+    const ids = sheet.getRange(2, idColIndex + 1, sheet.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]).trim() == String(id).trim()) {
+            return i + 2; // Return actual row number
+        }
+    }
+    return -1;
+}
+
+// -- CRUD FUNCTIONS --
+
+function readAllData() {
+  try {
+    const students = getSheetData(studentsSheet);
+    const records = getSheetData(recordsSheet);
+    return createJsonResponse({ status: 'success', data: { students, records } });
+  } catch (e) {
+    return createJsonResponse({ status: 'error', message: e.message });
+  }
+}
+
+function addRecord(payload) {
+  const newId = Utilities.getUuid();
+  recordsSheet.appendRow([
+    newId, new Date(), payload.nama, payload.tahun, payload.kelas, payload.sesi, payload.bulan,
+    payload.pages, payload.cat.fiksyen, payload.cat.bukanFiksyen, payload.cat.bukanBuku,
+    payload.lang.BM, payload.lang.BI, payload.lang.lain
+  ]);
+  return createJsonResponse({ status: 'success', id: newId });
+}
+
+function updateRecord(payload) {
+    const rowNum = findRowById(recordsSheet, payload.id);
+    if (rowNum === -1) return createJsonResponse({ status: 'error', message: 'Rekod tidak ditemui' });
+    const header = recordsSheet.getRange(1, 1, 1, recordsSheet.getLastColumn()).getValues()[0];
+    const dataToSet = {};
+    dataToSet['id'] = payload.id;
+    dataToSet['createdAt'] = new Date();
+    dataToSet['nama'] = payload.nama;
+    dataToSet['tahun'] = payload.tahun;
+    dataToSet['kelas'] = payload.kelas;
+    dataToSet['sesi'] = payload.sesi;
+    dataToSet['bulan'] = payload.bulan;
+    dataToSet['pages'] = payload.pages;
+    dataToSet['cat_fiksyen'] = payload.cat.fiksyen;
+    dataToSet['cat_bukanFiksyen'] = payload.cat.bukanFiksyen;
+    dataToSet['cat_bukanBuku'] = payload.cat.bukanBuku;
+    dataToSet['lang_BM'] = payload.lang.BM;
+    dataToSet['lang_BI'] = payload.lang.BI;
+    dataToSet['lang_lain'] = payload.lang.lain;
+
+    const rowData = header.map(col => dataToSet[col] !== undefined ? dataToSet[col] : '');
+    recordsSheet.getRange(rowNum, 1, 1, header.length).setValues([rowData]);
+    return createJsonResponse({ status: 'success' });
+}
+
+function deleteNilamRecords(payload) {
+    let deletedCount = 0;
+    payload.ids.forEach(id => {
+        const rowNum = findRowById(recordsSheet, id);
+        if (rowNum !== -1) {
+            recordsSheet.deleteRow(rowNum);
+            deletedCount++;
+        }
+    });
+    // Re-run findRowById for subsequent deletes if rows shift
+     if(payload.ids.length > 1 && deletedCount < payload.ids.length) {
+       // A bit inefficient, but safer for multiple deletes
+       deleteNilamRecords({ids: payload.ids.filter(id => findRowById(recordsSheet, id) !== -1)});
+     }
+    return createJsonResponse({ status: 'success' });
+}
+
+function uploadStudents(payload) {
+    const students = payload.students;
+    const data = studentsSheet.getDataRange().getValues();
+    const header = data[0].map(h => String(h).trim().toLowerCase());
+    const namaColIndex = header.indexOf('nama');
+    const sesiColIndex = header.indexOf('sesi');
+    const tahunColIndex = header.indexOf('tahun');
+    const kelasColIndex = header.indexOf('kelas');
+
+    const existingStudents = {};
+    for(let i = 1; i < data.length; i++) {
+        existingStudents[`${data[i][namaColIndex]}_${data[i][sesiColIndex]}`] = i + 1;
+    }
+
+    students.forEach(student => {
+        const key = `${student.nama}_${student.sesi}`;
+        if (existingStudents[key]) {
+            const rowNum = existingStudents[key];
+            if(tahunColIndex > -1) studentsSheet.getRange(rowNum, tahunColIndex + 1).setValue(student.tahun);
+            if(kelasColIndex > -1) studentsSheet.getRange(rowNum, kelasColIndex + 1).setValue(student.kelas);
+        } else {
+            studentsSheet.appendRow([Utilities.getUuid(), new Date(), student.nama, student.sesi, student.tahun, student.kelas]);
+        }
+    });
+    return createJsonResponse({ status: 'success' });
+}
+
+function updateStudent(payload) {
+    const rowNum = findRowById(studentsSheet, payload.id);
+    if (rowNum === -1) return createJsonResponse({ status: 'error', message: 'Murid tidak ditemui' });
+    const header = studentsSheet.getRange(1, 1, 1, studentsSheet.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase());
+    const namaColIndex = header.indexOf('nama');
+    const tahunColIndex = header.indexOf('tahun');
+    const kelasColIndex = header.indexOf('kelas');
+    
+    if(namaColIndex > -1) studentsSheet.getRange(rowNum, namaColIndex + 1).setValue(payload.nama);
+    if(tahunColIndex > -1) studentsSheet.getRange(rowNum, tahunColIndex + 1).setValue(payload.tahun);
+    if(kelasColIndex > -1) studentsSheet.getRange(rowNum, kelasColIndex + 1).setValue(payload.kelas);
+
+    return createJsonResponse({ status: 'success' });
+}
+
+function deleteStudent(payload) {
+    const studentRowNum = findRowById(studentsSheet, payload.id);
+    if (studentRowNum !== -1) {
+        studentsSheet.deleteRow(studentRowNum);
+    }
+    
+    const recordsData = recordsSheet.getDataRange().getValues();
+    const header = recordsData.shift().map(h => String(h).trim().toLowerCase());
+    const nameColIndex = header.indexOf('nama');
+
+    for (let i = recordsData.length - 1; i >= 0; i--) {
+        if (recordsData[i][nameColIndex] == payload.name) {
+            recordsSheet.deleteRow(i + 2);
+        }
+    }
+    return createJsonResponse({ status: 'success' });
+}
+
+function deleteAllSessionStudents(payload) {
+    const data = studentsSheet.getDataRange().getValues();
+    const header = data[0].map(h => String(h).trim().toLowerCase());
+    const sesiColIndex = header.indexOf('sesi');
+    
+    if (sesiColIndex === -1) {
+      return createJsonResponse({ status: 'error', message: "Lajur 'sesi' tidak ditemui dalam Google Sheet 'students'." });
+    }
+
+    const sessionYear = String(payload.sessionYear).trim();
+    let deletedCount = 0;
+    
+    for (let i = data.length - 1; i > 0; i--) {
+        const rowSesi = String(data[i][sesiColIndex]).trim();
+        if (rowSesi == sessionYear) {
+            studentsSheet.deleteRow(i + 1);
+            deletedCount++;
+        }
+    }
+    
+    if (deletedCount > 0) {
+        return createJsonResponse({ status: 'success', message: `${deletedCount} rekod murid untuk sesi ${sessionYear} telah dipadam.` });
+    } else {
+        return createJsonResponse({ status: 'error', message: `Tiada murid ditemui untuk sesi ${sessionYear}. Sila pastikan ejaan sesi betul.` });
+    }
+}
+
+
+function deleteAllNilamRecords() {
+    const lastRow = recordsSheet.getLastRow();
+    if (lastRow > 1) {
+        recordsSheet.deleteRows(2, lastRow - 1);
+    }
+    return createJsonResponse({ status: 'success' });
+}
+
