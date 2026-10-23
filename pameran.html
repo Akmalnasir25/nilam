@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ms">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mod Pameran — Sistem Rekod Bacaan NILAM</title>
+    <link rel="icon" href="./logo.png" type="image/png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        html, body { height: 100%; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            background: radial-gradient(1200px 800px at 10% 0%, #1e3a8a 0%, transparent 60%),
+                        radial-gradient(1000px 700px at 100% 100%, #3730a3 0%, transparent 55%),
+                        #0b1225;
+            color: #fff;
+            overflow: hidden;
+        }
+        body.idle, body.idle * { cursor: none !important; }
+
+        /* Slides */
+        .slide {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            padding: 5vh 6vw 12vh;
+            opacity: 0; visibility: hidden;
+            transform: scale(1.02);
+            transition: opacity .8s ease, transform .8s ease, visibility 0s linear .8s;
+        }
+        .slide.active {
+            opacity: 1; visibility: visible; transform: scale(1);
+            transition: opacity .8s ease, transform .8s ease, visibility 0s;
+        }
+        .slide .reveal { opacity: 0; transform: translateY(24px); }
+        .slide.active .reveal { animation: rise .7s cubic-bezier(.2, .7, .2, 1) forwards; }
+        .slide.active .reveal.d1 { animation-delay: .15s; }
+        .slide.active .reveal.d2 { animation-delay: .3s; }
+        .slide.active .reveal.d3 { animation-delay: .45s; }
+        .slide.active .reveal.d4 { animation-delay: .6s; }
+        .slide.active .reveal.d5 { animation-delay: .75s; }
+        .slide.active .reveal.d6 { animation-delay: .9s; }
+        @keyframes rise { to { opacity: 1; transform: none; } }
+
+        .kicker { letter-spacing: .25em; text-transform: uppercase; font-weight: 700; color: #93c5fd; font-size: clamp(12px, 1.3vw, 20px); }
+        .h-xl { font-weight: 900; line-height: 1.02; font-size: clamp(40px, 7vw, 120px); letter-spacing: -.02em; }
+        .h-lg { font-weight: 800; line-height: 1.08; font-size: clamp(30px, 4.2vw, 72px); letter-spacing: -.01em; }
+        .lead { font-size: clamp(16px, 1.7vw, 28px); color: #cbd5e1; line-height: 1.5; }
+        .card { background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .12); border-radius: 20px; backdrop-filter: blur(6px); }
+        .grad-text { background: linear-gradient(90deg, #60a5fa, #a5b4fc, #f0abfc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+        /* Mock UI (light) */
+        .mock { background: #f8fafc; color: #0f172a; border-radius: 16px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); overflow: hidden; }
+        .mock-bar { background: linear-gradient(90deg, #1e40af, #1e293b); color: #fff; padding: 10px 16px; font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+        .mock-dot { width: 10px; height: 10px; border-radius: 99px; background: rgba(255, 255, 255, .4); }
+        .bar-grow { transform-origin: bottom; transform: scaleY(0); }
+        .slide.active .bar-grow { animation: grow 1s cubic-bezier(.2, .7, .2, 1) forwards; }
+        .hbar-grow { transform-origin: left; transform: scaleX(0); }
+        .slide.active .hbar-grow { animation: growx 1s cubic-bezier(.2, .7, .2, 1) forwards; }
+        @keyframes grow { to { transform: scaleY(1); } }
+        @keyframes growx { to { transform: scaleX(1); } }
+
+        .typing::after { content: '|'; animation: blink 1s steps(1) infinite; margin-left: 2px; color: #1d4ed8; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* Progress + controls */
+        #progress { position: fixed; left: 0; bottom: 0; height: 5px; width: 0; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); z-index: 50; }
+        #controls { transition: opacity .4s; }
+        body.idle #controls { opacity: 0; pointer-events: none; }
+        .ctl { background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .18); border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; transition: background .2s; }
+        .ctl:hover { background: rgba(255, 255, 255, .2); }
+        .dot { width: 10px; height: 10px; border-radius: 99px; background: rgba(255, 255, 255, .25); transition: all .3s; }
+        .dot.on { width: 28px; background: #93c5fd; }
+
+        /* Floating books decoration */
+        .floaty { position: absolute; font-size: clamp(28px, 4vw, 64px); opacity: .18; animation: floaty 9s ease-in-out infinite; pointer-events: none; }
+        @keyframes floaty { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-30px) rotate(6deg); } }
+
+        /* Permanent corner QR (kiosk) */
+        #cornerQr { position: fixed; right: 20px; top: 20px; z-index: 40; background: #fff; color: #0f172a; border-radius: 14px; padding: 8px 8px 6px; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); transition: opacity .5s; }
+        #cornerQr.hide { opacity: 0; pointer-events: none; }
+        #cornerQr img, #cornerQr canvas { width: 92px !important; height: 92px !important; }
+
+        #startOverlay { transition: opacity .5s; }
+        .pulse-ring { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(96, 165, 250, .7); } 70% { box-shadow: 0 0 0 24px rgba(96, 165, 250, 0); } 100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0); } }
+    </style>
+</head>
+
+<body>
+    <div id="deck" class="fixed inset-0">
+
+        <!-- 1. TAJUK -->
+        <section class="slide" data-duration="9">
+            <span class="floaty" style="left:8%;top:18%">📚</span>
+            <span class="floaty" style="right:10%;top:22%;animation-delay:-3s">📖</span>
+            <span class="floaty" style="left:16%;bottom:20%;animation-delay:-5s">✏️</span>
+            <span class="floaty" style="right:16%;bottom:24%;animation-delay:-1s">⭐</span>
+            <div class="text-center max-w-5xl">
+                <div class="reveal inline-flex p-5 rounded-3xl bg-white/10 ring-1 ring-white/20 mb-8">
+                    <img src="./logo.png" alt="Logo NILAM" class="w-28 h-28 md:w-36 md:h-36 object-contain" />
+                </div>
+                <div class="reveal d1 kicker mb-4">Sistem Rekod Bacaan</div>
+                <h1 class="reveal d2 h-xl"><span class="grad-text">NILAM</span> <span class="text-white/50 font-light">v2</span></h1>
+                <p class="reveal d3 lead mt-6 tracking-[.3em] font-semibold text-white/80">REKOD • ANALISIS • INSPIRASI</p>
+                <p class="reveal d4 mt-10 text-white/60 text-lg">Satu buku, seribu ilham.</p>
+            </div>
+        </section>
+
+        <!-- 2. APA ITU NILAM -->
+        <section class="slide" data-duration="11">
+            <div class="grid md:grid-cols-2 gap-12 items-center max-w-7xl w-full">
+                <div>
+                    <div class="reveal kicker mb-4">Latar Belakang</div>
+                    <h2 class="reveal d1 h-lg mb-6">Apa itu <span class="grad-text">NILAM</span>?</h2>
+                    <p class="reveal d2 lead"><strong class="text-white">Nadi Ilmu Amalan Membaca</strong> — program Kementerian
+                        Pendidikan Malaysia untuk memupuk budaya membaca dalam kalangan murid.</p>
+                    <p class="reveal d3 lead mt-4">Setiap bahan yang dibaca direkod, dan murid diberi pengiktirafan
+                        mengikut bilangan bahan bacaan.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="reveal d2 card p-6"><div class="text-5xl mb-3">📖</div><div class="font-bold text-xl">Membaca</div><div class="text-white/60 mt-1">Buku fiksyen, bukan fiksyen & bahan bukan buku</div></div>
+                    <div class="reveal d3 card p-6"><div class="text-5xl mb-3">📝</div><div class="font-bold text-xl">Merekod</div><div class="text-white/60 mt-1">Setiap bacaan dicatat secara berterusan</div></div>
+                    <div class="reveal d4 card p-6"><div class="text-5xl mb-3">📊</div><div class="font-bold text-xl">Memantau</div><div class="text-white/60 mt-1">Guru melihat kemajuan murid & kelas</div></div>
+                    <div class="reveal d5 card p-6"><div class="text-5xl mb-3">🏆</div><div class="font-bold text-xl">Mengiktiraf</div><div class="text-white/60 mt-1">Penarafan bintang & ranking pembaca</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. MASALAH -> PENYELESAIAN -->
+        <section class="slide" data-duration="11">
+            <div class="max-w-7xl w-full">
+                <div class="reveal kicker mb-4 text-center">Kenapa sistem ini dibina?</div>
+                <h2 class="reveal d1 h-lg text-center mb-12">Dari <span class="text-rose-300">kertas</span> ke <span class="grad-text">digital</span></h2>
+                <div class="grid md:grid-cols-[1fr_auto_1fr] gap-8 items-center">
+                    <div class="reveal d2 card p-8 border-rose-400/30">
+                        <div class="text-rose-300 font-bold text-xl mb-4">❌ Cara lama</div>
+                        <ul class="space-y-3 lead !text-[clamp(15px,1.4vw,22px)]">
+                            <li>• Buku rekod mudah hilang / rosak</li>
+                            <li>• Guru kira jumlah secara manual</li>
+                            <li>• Sukar banding antara kelas & tahun</li>
+                            <li>• Laporan ambil masa berhari-hari</li>
+                        </ul>
+                    </div>
+                    <div class="reveal d3 text-6xl text-center">➜</div>
+                    <div class="reveal d4 card p-8 border-emerald-400/30">
+                        <div class="text-emerald-300 font-bold text-xl mb-4">✅ Dengan NILAM v2</div>
+                        <ul class="space-y-3 lead !text-[clamp(15px,1.4vw,22px)]">
+                            <li>• Data tersimpan selamat di awan</li>
+                            <li>• Jumlah & purata dikira automatik</li>
+                            <li>• Graf analisis serta-merta</li>
+                            <li>• Laporan PDF dengan satu klik</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. CIRI: BORANG REKOD -->
+        <section class="slide" data-duration="12">
+            <div class="grid md:grid-cols-2 gap-12 items-center max-w-7xl w-full">
+                <div>
+                    <div class="reveal kicker mb-4">Ciri 1 · Borang Rekod</div>
+                    <h2 class="reveal d1 h-lg mb-6">Rekod bacaan dalam <span class="grad-text">beberapa saat</span></h2>
+                    <ul class="space-y-4 lead">
+                        <li class="reveal d2">🎯 Pilih <b class="text-white">Tahun → Kelas → Nama</b> secara berperingkat</li>
+                        <li class="reveal d3">📄 Masukkan bulan & jumlah muka surat</li>
+                        <li class="reveal d4">📚 Jenis bahan: Fiksyen, Bukan Fiksyen, Bukan Buku</li>
+                        <li class="reveal d5">🌐 Bahasa: BM, BI & lain-lain — disemak supaya jumlah sepadan</li>
+                    </ul>
+                </div>
+                <div class="reveal d2 mock">
+                    <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="ml-2">Borang Rekod</span></div>
+                    <div class="p-6 grid grid-cols-2 gap-4 text-sm">
+                        <div><div class="font-semibold mb-1">Tahun</div><div class="rounded-lg border px-3 py-2 bg-white">D4</div></div>
+                        <div><div class="font-semibold mb-1">Kelas</div><div class="rounded-lg border px-3 py-2 bg-white">4 BESTARI</div></div>
+                        <div class="col-span-2"><div class="font-semibold mb-1">Nama Murid</div><div class="rounded-lg border px-3 py-2 bg-white typing">Nur Aisyah binti Ahmad</div></div>
+                        <div><div class="font-semibold mb-1">Bulan</div><div class="rounded-lg border px-3 py-2 bg-white">Oktober</div></div>
+                        <div><div class="font-semibold mb-1">Muka Surat</div><div class="rounded-lg border px-3 py-2 bg-white">120</div></div>
+                        <div class="col-span-2 grid grid-cols-3 gap-2">
+                            <div class="rounded-lg border p-2 bg-white text-center"><div class="text-xs text-slate-500">Fiksyen</div><div class="font-bold text-lg">2</div></div>
+                            <div class="rounded-lg border p-2 bg-white text-center"><div class="text-xs text-slate-500">Bukan Fiksyen</div><div class="font-bold text-lg">1</div></div>
+                            <div class="rounded-lg border p-2 bg-white text-center"><div class="text-xs text-slate-500">Bukan Buku</div><div class="font-bold text-lg">0</div></div>
+                        </div>
+                        <div class="col-span-2"><span class="inline-block px-4 py-2.5 rounded-lg bg-blue-700 text-white font-semibold">➤ Hantar Rekod</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. CIRI: ANALISIS -->
+        <section class="slide" data-duration="12">
+            <div class="grid md:grid-cols-2 gap-12 items-center max-w-7xl w-full">
+                <div class="reveal d2 mock order-2 md:order-1">
+                    <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="ml-2">Analisis</span></div>
+                    <div class="p-6">
+                        <div class="text-sm font-semibold text-slate-600 mb-3">Jumlah Bacaan Mengikut Tahun</div>
+                        <div class="flex items-end gap-3 h-48 border-b border-slate-200">
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:45%;background:#1d4ed8"></div>
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:62%;background:#4338ca;animation-delay:.1s"></div>
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:80%;background:#6366f1;animation-delay:.2s"></div>
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:95%;background:#ec4899;animation-delay:.3s"></div>
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:70%;background:#f472b6;animation-delay:.4s"></div>
+                            <div class="flex-1 bar-grow rounded-t-md" style="height:58%;background:#c084fc;animation-delay:.5s"></div>
+                        </div>
+                        <div class="flex gap-3 text-xs text-slate-500 mt-2"><span class="flex-1 text-center">D1</span><span class="flex-1 text-center">D2</span><span class="flex-1 text-center">D3</span><span class="flex-1 text-center">D4</span><span class="flex-1 text-center">D5</span><span class="flex-1 text-center">D6</span></div>
+                        <div class="grid grid-cols-3 gap-2 mt-5 text-center text-xs">
+                            <div class="rounded-lg bg-blue-50 p-2"><div class="font-bold text-blue-700 text-base">Kelas</div>bacaan per kelas</div>
+                            <div class="rounded-lg bg-pink-50 p-2"><div class="font-bold text-pink-700 text-base">Bulan</div>trend terkumpul</div>
+                            <div class="rounded-lg bg-amber-50 p-2"><div class="font-bold text-amber-700 text-base">Purata</div>per murid</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="order-1 md:order-2">
+                    <div class="reveal kicker mb-4">Ciri 2 · Rumusan & Analisis</div>
+                    <h2 class="reveal d1 h-lg mb-6">Data bertukar menjadi <span class="grad-text">gambaran jelas</span></h2>
+                    <ul class="space-y-4 lead">
+                        <li class="reveal d2">📈 Graf bacaan mengikut kelas, tahun, bulan, jenis bahan & bahasa</li>
+                        <li class="reveal d3">🧮 Jadual purata bacaan per murid</li>
+                        <li class="reveal d4">🔎 Tapis mengikut sesi, tahun, kelas, bulan & nama</li>
+                        <li class="reveal d5">🖨️ Cetak atau muat turun laporan PDF</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. CIRI: RANKING & BINTANG -->
+        <section class="slide" data-duration="12">
+            <div class="max-w-6xl w-full">
+                <div class="text-center">
+                    <div class="reveal kicker mb-4">Ciri 3 · Ranking & Penarafan Bintang</div>
+                    <h2 class="reveal d1 h-lg mb-10">Setiap bacaan membawa ke <span class="grad-text">bintang</span> ⭐</h2>
+                </div>
+                <div class="grid grid-cols-5 gap-3 md:gap-5">
+                    <div class="reveal d2 card p-4 md:p-6 text-center"><div class="text-amber-300 text-xl md:text-3xl">★</div><div class="text-3xl md:text-5xl font-black mt-2">144</div><div class="text-white/60 text-sm mt-1">bahan</div><div class="font-semibold mt-2">1 Bintang</div></div>
+                    <div class="reveal d3 card p-4 md:p-6 text-center"><div class="text-amber-300 text-xl md:text-3xl">★★</div><div class="text-3xl md:text-5xl font-black mt-2">288</div><div class="text-white/60 text-sm mt-1">bahan</div><div class="font-semibold mt-2">2 Bintang</div></div>
+                    <div class="reveal d4 card p-4 md:p-6 text-center"><div class="text-amber-300 text-xl md:text-3xl">★★★</div><div class="text-3xl md:text-5xl font-black mt-2">432</div><div class="text-white/60 text-sm mt-1">bahan</div><div class="font-semibold mt-2">3 Bintang</div></div>
+                    <div class="reveal d5 card p-4 md:p-6 text-center"><div class="text-amber-300 text-xl md:text-3xl">★★★★</div><div class="text-3xl md:text-5xl font-black mt-2">576</div><div class="text-white/60 text-sm mt-1">bahan</div><div class="font-semibold mt-2">4 Bintang</div></div>
+                    <div class="reveal d6 card p-4 md:p-6 text-center ring-2 ring-amber-300/60"><div class="text-amber-300 text-xl md:text-3xl">★★★★★</div><div class="text-3xl md:text-5xl font-black mt-2">720</div><div class="text-white/60 text-sm mt-1">bahan</div><div class="font-semibold mt-2">5 Bintang</div></div>
+                </div>
+                <p class="reveal d6 lead text-center mt-10">Ranking keseluruhan dengan pingat 🥇🥈🥉 — memotivasikan murid untuk terus membaca.</p>
+            </div>
+        </section>
+
+        <!-- 7. CIRI: URUS & BANDINGKAN -->
+        <section class="slide" data-duration="12">
+            <div class="max-w-7xl w-full">
+                <div class="text-center">
+                    <div class="reveal kicker mb-4">Ciri 4 · Urus & Bandingkan</div>
+                    <h2 class="reveal d1 h-lg mb-12">Mudah diurus, <span class="grad-text">tahun demi tahun</span></h2>
+                </div>
+                <div class="grid md:grid-cols-4 gap-5">
+                    <div class="reveal d2 card p-7"><div class="text-5xl mb-4">📥</div><div class="font-bold text-xl mb-2">Import CSV</div><div class="text-white/65">Muat naik senarai murid sekali gus dari fail Excel/CSV.</div></div>
+                    <div class="reveal d3 card p-7"><div class="text-5xl mb-4">🔁</div><div class="font-bold text-xl mb-2">Migrasi Sesi</div><div class="text-white/65">Bawa murid ke sesi baharu — tahun dinaikkan automatik, baki bacaan disimpan.</div></div>
+                    <div class="reveal d4 card p-7"><div class="text-5xl mb-4">⚖️</div><div class="font-bold text-xl mb-2">Perbandingan Sesi</div><div class="text-white/65">Bandingkan jumlah, purata & trend bacaan antara tahun.</div></div>
+                    <div class="reveal d5 card p-7"><div class="text-5xl mb-4">📄</div><div class="font-bold text-xl mb-2">Laporan PDF</div><div class="text-white/65">Rumusan, analisis & ranking sedia dicetak untuk mesyuarat.</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8. STATISTIK LANGSUNG -->
+        <section class="slide" data-duration="14" data-live="stats">
+            <div class="max-w-7xl w-full">
+                <div class="text-center">
+                    <div class="reveal kicker mb-4">Data Sebenar · <span class="live-session">Sesi Semasa</span></div>
+                    <h2 class="reveal d1 h-lg mb-10">NILAM dalam <span class="grad-text">angka</span></h2>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
+                    <div class="reveal d2 card p-7 text-center"><div class="text-white/60 font-semibold">Murid Berdaftar</div><div class="text-5xl md:text-6xl font-black mt-3 countup" data-key="students">0</div></div>
+                    <div class="reveal d3 card p-7 text-center"><div class="text-white/60 font-semibold">Bahan Dibaca</div><div class="text-5xl md:text-6xl font-black mt-3 text-sky-300 countup" data-key="bahan">0</div></div>
+                    <div class="reveal d4 card p-7 text-center"><div class="text-white/60 font-semibold">Muka Surat</div><div class="text-5xl md:text-6xl font-black mt-3 text-violet-300 countup" data-key="pages">0</div></div>
+                    <div class="reveal d5 card p-7 text-center"><div class="text-white/60 font-semibold">Purata / Murid</div><div class="text-5xl md:text-6xl font-black mt-3 text-pink-300 countup" data-key="avg" data-decimals="1">0</div></div>
+                </div>
+                <div class="reveal d6 card p-6 mt-6">
+                    <div class="font-semibold text-white/80 mb-3">📈 Bacaan terkumpul mengikut bulan</div>
+                    <div style="height:28vh"><canvas id="liveMonthly"></canvas></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 9. PEMBACA TERBAIK -->
+        <section class="slide" data-duration="13" data-live="top">
+            <div class="grid md:grid-cols-2 gap-12 items-center max-w-7xl w-full">
+                <div>
+                    <div class="reveal kicker mb-4">Data Sebenar · <span class="live-session">Sesi Semasa</span></div>
+                    <h2 class="reveal d1 h-lg mb-6">Bintang <span class="grad-text">Pembaca</span> Kita 🏆</h2>
+                    <p class="reveal d2 lead">Tahniah kepada murid-murid yang paling banyak membaca. Teruskan usaha!</p>
+                    <div class="reveal d3 card p-5 mt-8">
+                        <div class="font-semibold text-white/80 mb-3">Bacaan mengikut tahun</div>
+                        <div style="height:24vh"><canvas id="liveYear"></canvas></div>
+                    </div>
+                </div>
+                <div id="topList" class="space-y-3"></div>
+            </div>
+        </section>
+
+        <!-- 10. TEKNOLOGI -->
+        <section class="slide" data-duration="10">
+            <div class="max-w-6xl w-full text-center">
+                <div class="reveal kicker mb-4">Di Sebalik Tabir</div>
+                <h2 class="reveal d1 h-lg mb-12">Ringkas, percuma & <span class="grad-text">boleh diakses di mana-mana</span></h2>
+                <div class="grid md:grid-cols-3 gap-5 text-left">
+                    <div class="reveal d2 card p-7"><div class="text-5xl mb-4">🗂️</div><div class="font-bold text-xl mb-2">Google Sheets</div><div class="text-white/65">Pangkalan data yang biasa digunakan guru — mudah disemak & disandarkan.</div></div>
+                    <div class="reveal d3 card p-7"><div class="text-5xl mb-4">⚙️</div><div class="font-bold text-xl mb-2">Google Apps Script</div><div class="text-white/65">Menghubungkan sistem dengan data secara selamat dalam masa nyata.</div></div>
+                    <div class="reveal d4 card p-7"><div class="text-5xl mb-4">🌐</div><div class="font-bold text-xl mb-2">Aplikasi Web</div><div class="text-white/65">Dibuka melalui pelayar di komputer, tablet atau telefon — tiada pemasangan.</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 11. CUBA SENDIRI -->
+        <section class="slide" data-duration="16" data-final>
+            <div class="grid md:grid-cols-[1.2fr_1fr] gap-12 items-center max-w-6xl w-full">
+                <div>
+                    <div class="reveal kicker mb-4">Cuba Sendiri</div>
+                    <h2 class="reveal d1 h-lg mb-6">Lihat <span class="grad-text">sistem sebenar</span> sekarang</h2>
+                    <p class="reveal d2 lead mb-8">Imbas kod QR dengan telefon anda, atau tekan butang di bawah untuk membuka Sistem Rekod Bacaan NILAM.</p>
+                    <a id="openSystemBtn" href="./" target="_blank" rel="noopener"
+                        class="reveal d3 pulse-ring inline-flex items-center gap-3 px-8 py-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xl md:text-2xl font-bold shadow-2xl">
+                        🔐 Masuk ke Sistem NILAM
+                    </a>
+                    <div class="reveal d4 mt-5 text-white/50 text-sm break-all" id="systemUrlText"></div>
+                </div>
+                <div class="reveal d2 flex flex-col items-center">
+                    <div class="bg-white p-5 rounded-3xl shadow-2xl"><div id="bigQr"></div></div>
+                    <div class="mt-4 font-semibold text-white/80">📱 Imbas untuk buka</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Corner QR (hidden on final slide) -->
+    <a id="cornerQr" href="./" target="_blank" rel="noopener" title="Buka sistem NILAM">
+        <div id="smallQr"></div>
+        <div class="text-[11px] font-bold mt-1">Imbas • Cuba</div>
+    </a>
+
+    <!-- Controls -->
+    <div id="controls" class="fixed bottom-5 left-0 right-0 z-40 flex items-center justify-between px-5 gap-3">
+        <div class="flex items-center gap-2">
+            <a href="./" class="ctl" title="Kembali ke sistem">← Sistem</a>
+        </div>
+        <div id="dots" class="hidden md:flex items-center gap-2"></div>
+        <div class="flex items-center gap-2">
+            <button id="prevBtn" class="ctl" title="Sebelum (←)">‹</button>
+            <button id="playBtn" class="ctl w-24" title="Main / Jeda (Space)">⏸ Jeda</button>
+            <button id="nextBtn" class="ctl" title="Seterusnya (→)">›</button>
+            <button id="fsBtn" class="ctl" title="Skrin penuh (F)">⛶ Skrin Penuh</button>
+        </div>
+    </div>
+    <div id="progress"></div>
+
+    <!-- Start overlay (needed so fullscreen is triggered by a user click) -->
+    <div id="startOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-[#0b1225]/95">
+        <div class="text-center px-6">
+            <img src="./logo.png" alt="" class="w-24 h-24 mx-auto mb-6 object-contain" />
+            <div class="kicker mb-3">Mod Pameran</div>
+            <h1 class="text-4xl md:text-6xl font-black mb-4">Sistem Rekod Bacaan <span class="grad-text">NILAM</span></h1>
+            <p class="text-white/60 mb-10">Paparan berjalan sendiri. Tekan <b>F</b> untuk skrin penuh, <b>Space</b> untuk jeda, <b>← →</b> untuk tukar slaid.</p>
+            <div class="flex flex-wrap justify-center gap-4">
+                <button id="startFsBtn" class="pulse-ring px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-xl font-bold">▶ Mula (Skrin Penuh)</button>
+                <button id="startBtn" class="px-8 py-4 rounded-2xl bg-white/10 border border-white/20 text-xl font-semibold">Mula tanpa skrin penuh</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+        const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwD6_1wecom-rcjIrClNEilh7Z04Qq8g2iMR84r2EJ7GnD4IClMowQmQdluhIv-gRs4aA/exec";
+        const FALLBACK_SYSTEM_URL = "https://nilam-skp.web.app/";
+        const IDLE_RESUME_MS = 45000; // sambung autoplay selepas pengunjung berhenti berinteraksi
+        const MONTH_SHORT = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+
+        const byId = id => document.getElementById(id);
+        const getLS = k => { try { return localStorage.getItem(k); } catch { return null; } };
+
+        // --- Pautan sistem sebenar ---
+        const SYSTEM_URL = location.protocol.startsWith('http') ? new URL('./', location.href).href : FALLBACK_SYSTEM_URL;
+        ['openSystemBtn', 'cornerQr'].forEach(id => byId(id).href = SYSTEM_URL);
+        byId('systemUrlText').textContent = SYSTEM_URL;
+        if (window.QRCode) {
+            new QRCode(byId('bigQr'), { text: SYSTEM_URL, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+            new QRCode(byId('smallQr'), { text: SYSTEM_URL, width: 92, height: 92, correctLevel: QRCode.CorrectLevel.M });
+        }
+
+        // --- Slaid ---
+        let slides = [...document.querySelectorAll('.slide')];
+        let current = 0, playing = true, timer = null, slideStart = 0, remaining = 0, rafId = null, resumeTimer = null;
+
+        function activeSlides() { return slides.filter(s => !s.dataset.skip); }
+        function durationOf(s) { return (parseFloat(s.dataset.duration) || 10) * 1000; }
+
+        function buildDots() {
+            const list = activeSlides();
+            byId('dots').innerHTML = list.map((_, i) => `<button class="dot" data-i="${i}" aria-label="Slaid ${i + 1}"></button>`).join('');
+            byId('dots').querySelectorAll('.dot').forEach(d => d.addEventListener('click', () => { userInteract(); show(+d.dataset.i); }));
+        }
+
+        function show(i) {
+            const list = activeSlides();
+            current = (i + list.length) % list.length;
+            slides.forEach(s => s.classList.remove('active'));
+            const s = list[current];
+            void s.offsetWidth; // mulakan semula animasi
+            s.classList.add('active');
+            byId('dots').querySelectorAll('.dot').forEach((d, k) => d.classList.toggle('on', k === current));
+            byId('cornerQr').classList.toggle('hide', s.hasAttribute('data-final'));
+            if (s.dataset.live) onLiveSlide(s);
+            remaining = durationOf(s);
+            schedule();
+        }
+
+        function schedule() {
+            clearTimeout(timer); cancelAnimationFrame(rafId);
+            if (!playing) return;
+            slideStart = performance.now();
+            const total = durationOf(activeSlides()[current]);
+            timer = setTimeout(() => show(current + 1), remaining);
+            const tick = () => {
+                const elapsed = total - remaining + (performance.now() - slideStart);
+                byId('progress').style.width = Math.min(100, elapsed / total * 100) + '%';
+                rafId = requestAnimationFrame(tick);
+            };
+            tick();
+        }
+
+        function setPlaying(p) {
+            if (p === playing) return;
+            if (!p) { remaining -= performance.now() - slideStart; clearTimeout(timer); cancelAnimationFrame(rafId); }
+            playing = p;
+            byId('playBtn').textContent = p ? '⏸ Jeda' : '▶ Main';
+            if (p) schedule();
+        }
+
+        // Pengunjung tekan butang: jeda, kemudian sambung sendiri bila tiada aktiviti
+        function userInteract() {
+            clearTimeout(resumeTimer);
+            resumeTimer = setTimeout(() => { if (!playing) setPlaying(true); }, IDLE_RESUME_MS);
+        }
+
+        byId('prevBtn').onclick = () => { userInteract(); show(current - 1); };
+        byId('nextBtn').onclick = () => { userInteract(); show(current + 1); };
+        byId('playBtn').onclick = () => { userInteract(); setPlaying(!playing); };
+
+        // --- Skrin penuh ---
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => { });
+            else document.exitFullscreen?.();
+        }
+        byId('fsBtn').onclick = toggleFullscreen;
+        document.addEventListener('fullscreenchange', () => {
+            byId('fsBtn').textContent = document.fullscreenElement ? '⤢ Keluar' : '⛶ Skrin Penuh';
+        });
+
+        document.addEventListener('keydown', e => {
+            if (byId('startOverlay')) return;
+            if (e.key === 'ArrowRight' || e.key === 'PageDown') { userInteract(); show(current + 1); }
+            else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { userInteract(); show(current - 1); }
+            else if (e.key === ' ') { e.preventDefault(); userInteract(); setPlaying(!playing); }
+            else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+        });
+
+        // Sembunyi kursor & kawalan bila tiada pergerakan tetikus
+        let idleTimer;
+        function wake() { document.body.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => document.body.classList.add('idle'), 3500); }
+        ['mousemove', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, wake, { passive: true }));
+
+        // --- Mula ---
+        function start(fs) {
+            if (fs) toggleFullscreen();
+            const ov = byId('startOverlay'); ov.style.opacity = '0'; setTimeout(() => ov.remove(), 500);
+            buildDots(); show(0); wake();
+        }
+        byId('startFsBtn').onclick = () => start(true);
+        byId('startBtn').onclick = () => start(false);
+        if (new URLSearchParams(location.search).has('auto')) start(false);
+
+        // --- Data langsung dari Google Sheets ---
+        let live = null, monthlyChart = null, yearChart = null;
+        const sumBahan = tx => (Number(tx.cat_fiksyen) || 0) + (Number(tx.cat_bukanfiksyen ?? tx.cat_bukanFiksyen) || 0) + (Number(tx.cat_bukanbuku ?? tx.cat_bukanBuku) || 0);
+        const stars = n => n >= 720 ? 5 : n >= 576 ? 4 : n >= 432 ? 3 : n >= 288 ? 2 : n >= 144 ? 1 : 0;
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        async function loadLive() {
+            try {
+                const url = getLS('appsScriptUrl') || DEFAULT_SCRIPT_URL;
+                const res = await fetch(`${url}?action=readAll`);
+                const json = await res.json();
+                if (json.status !== 'success') throw new Error(json.message);
+                const students = json.data.students || [], records = json.data.records || [];
+                const sessions = [...new Set(records.map(r => String(r.sesi)).filter(s => /^20\d{2}$/.test(s)))].sort().reverse();
+                if (!sessions.length) throw new Error('Tiada sesi');
+                const sesi = sessions[0];
+                const txs = records.filter(r => String(r.sesi) === sesi);
+                const nStudents = students.filter(s => String(s.sesi) === sesi).length;
+                const bahan = txs.reduce((a, t) => a + sumBahan(t), 0);
+                const pages = txs.filter(t => t.bulan != '0').reduce((a, t) => a + (Number(t.pages) || 0), 0);
+
+                const raw = Array(12).fill(0); let base = 0;
+                txs.forEach(t => { const c = sumBahan(t); if (t.bulan == '0') { base += c; return; } const i = parseInt(t.bulan, 10) - 1; if (i >= 0 && i < 12) raw[i] += c; });
+                const lastMonth = Math.max(new Date().getFullYear() > +sesi ? 11 : new Date().getMonth(), raw.findLastIndex(v => v > 0));
+                let acc = base; const cumul = raw.map(v => (acc += v)).slice(0, lastMonth + 1);
+
+                const perStudent = new Map();
+                txs.forEach(t => { const k = t.nama; if (!perStudent.has(k)) perStudent.set(k, { nama: t.nama, kelas: t.kelas, tahun: t.tahun, n: 0 }); perStudent.get(k).n += sumBahan(t); });
+                const top = [...perStudent.values()].sort((a, b) => b.n - a.n).slice(0, 5);
+
+                const years = new Map();
+                txs.forEach(t => { if (t.tahun) years.set(t.tahun, (years.get(t.tahun) || 0) + sumBahan(t)); });
+
+                live = { sesi, students: nStudents, bahan, pages, avg: nStudents ? bahan / nStudents : 0, cumul, top, years };
+                document.querySelectorAll('.live-session').forEach(el => el.textContent = `Sesi ${sesi}`);
+                renderTop();
+            } catch (err) {
+                console.warn('Data langsung tidak tersedia:', err);
+                slides.forEach(s => { if (s.dataset.live) s.dataset.skip = '1'; });
+            }
+            if (!byId('startOverlay')) { buildDots(); byId('dots').querySelectorAll('.dot').forEach((d, k) => d.classList.toggle('on', k === current)); }
+        }
+
+        function renderTop() {
+            const medals = ['🥇', '🥈', '🥉', '4', '5'];
+            byId('topList').innerHTML = live.top.length ? live.top.map((s, i) => `
+                <div class="reveal d${i + 2} card p-5 flex items-center gap-5 ${i === 0 ? 'ring-2 ring-amber-300/60' : ''}">
+                    <div class="w-14 text-center ${i < 3 ? 'text-4xl' : 'text-2xl font-black text-white/60'}">${medals[i]}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-xl truncate">${esc(s.nama)}</div>
+                        <div class="text-white/60">${esc(s.tahun)} · ${esc(s.kelas)} <span class="text-amber-300 ml-2">${'★'.repeat(stars(s.n))}</span></div>
+                    </div>
+                    <div class="text-right"><div class="text-3xl font-black text-sky-300">${s.n}</div><div class="text-white/50 text-sm">bahan</div></div>
+                </div>`).join('') : '<div class="card p-8 text-center text-white/60">Belum ada rekod bacaan untuk sesi ini.</div>';
+        }
+
+        function countUp(el, target, decimals = 0) {
+            const t0 = performance.now(), dur = 1600;
+            const step = now => {
+                const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+                el.textContent = (target * e).toLocaleString('ms-MY', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+                if (p < 1) requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+        }
+
+        Chart.defaults.color = 'rgba(255,255,255,.75)';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.borderColor = 'rgba(255,255,255,.08)';
+
+        function onLiveSlide(slide) {
+            if (!live) return;
+            if (slide.dataset.live === 'stats') {
+                slide.querySelectorAll('.countup').forEach(el => setTimeout(() => countUp(el, live[el.dataset.key], +(el.dataset.decimals || 0)), 400));
+                monthlyChart?.destroy();
+                monthlyChart = new Chart(byId('liveMonthly'), {
+                    type: 'line',
+                    data: { labels: MONTH_SHORT.slice(0, live.cumul.length), datasets: [{ data: live.cumul, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.18)', fill: true, tension: .35, borderWidth: 3, pointRadius: 4, pointBackgroundColor: '#60a5fa' }] },
+                    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 1800, delay: 900 }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } } }
+                });
+            }
+            if (slide.dataset.live === 'top') {
+                const labels = [...live.years.keys()].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+                yearChart?.destroy();
+                yearChart = new Chart(byId('liveYear'), {
+                    type: 'bar',
+                    data: { labels, datasets: [{ data: labels.map(l => live.years.get(l)), backgroundColor: ['#60a5fa', '#818cf8', '#a78bfa', '#f472b6', '#fb7185', '#fbbf24'], borderRadius: 8 }] },
+                    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 1400, delay: 700 }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } } }
+                });
+            }
+        }
+
+        loadLive();
+        setInterval(loadLive, 5 * 60 * 1000); // segarkan data setiap 5 minit
+    </script>
+</body>
+
+</html>
