@@ -269,10 +269,10 @@
                     <h2 class="reveal d1 h-lg mb-10">NILAM dalam <span class="grad-text">angka</span></h2>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
-                    <div class="reveal d2 card p-7 text-center"><div class="text-white/60 font-semibold">Murid Berdaftar</div><div class="text-5xl md:text-6xl font-black mt-3 countup" data-key="students">0</div></div>
-                    <div class="reveal d3 card p-7 text-center"><div class="text-white/60 font-semibold">Bahan Dibaca</div><div class="text-5xl md:text-6xl font-black mt-3 text-sky-300 countup" data-key="bahan">0</div></div>
-                    <div class="reveal d4 card p-7 text-center"><div class="text-white/60 font-semibold">Muka Surat</div><div class="text-5xl md:text-6xl font-black mt-3 text-violet-300 countup" data-key="pages">0</div></div>
-                    <div class="reveal d5 card p-7 text-center"><div class="text-white/60 font-semibold">Purata / Murid</div><div class="text-5xl md:text-6xl font-black mt-3 text-pink-300 countup" data-key="avg" data-decimals="1">0</div></div>
+                    <div class="reveal d2 card p-5 md:p-7 text-center min-w-0"><div class="text-white/60 font-semibold">Murid Berdaftar</div><div class="font-black mt-3 whitespace-nowrap tabular-nums leading-tight countup" data-key="students">0</div></div>
+                    <div class="reveal d3 card p-5 md:p-7 text-center min-w-0"><div class="text-white/60 font-semibold">Bahan Dibaca</div><div class="font-black mt-3 whitespace-nowrap tabular-nums leading-tight text-sky-300 countup" data-key="bahan">0</div></div>
+                    <div class="reveal d4 card p-5 md:p-7 text-center min-w-0"><div class="text-white/60 font-semibold">Muka Surat</div><div class="font-black mt-3 whitespace-nowrap tabular-nums leading-tight text-violet-300 countup" data-key="pages">0</div></div>
+                    <div class="reveal d5 card p-5 md:p-7 text-center min-w-0"><div class="text-white/60 font-semibold">Purata / Murid</div><div class="font-black mt-3 whitespace-nowrap tabular-nums leading-tight text-pink-300 countup" data-key="avg" data-decimals="1">0</div></div>
                 </div>
                 <div class="reveal d6 card p-6 mt-6">
                     <div class="font-semibold text-white/80 mb-3">📈 Bacaan terkumpul mengikut bulan</div>
@@ -533,6 +533,23 @@
                 </div>`).join('') : '<div class="card p-8 text-center text-white/60">Belum ada rekod bacaan untuk sesi ini.</div>';
         }
 
+        const fmt = (n, decimals) => n.toLocaleString('ms-MY', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
+        // Kecilkan saiz nombor supaya nilai akhir muat dalam kotak (saiz sama untuk semua kotak)
+        function fitStats(slide) {
+            const els = [...slide.querySelectorAll('.countup')];
+            const saved = els.map(el => el.textContent);
+            let size = Math.min(72, window.innerWidth * 0.05);
+            els.forEach(el => {
+                el.style.fontSize = '100px';
+                el.textContent = fmt(live[el.dataset.key], +(el.dataset.decimals || 0));
+                const box = el.parentElement.clientWidth - parseFloat(getComputedStyle(el.parentElement).paddingLeft) * 2;
+                size = Math.min(size, 100 * box / el.scrollWidth * 0.95);
+            });
+            els.forEach((el, i) => { el.style.fontSize = Math.max(20, size) + 'px'; el.textContent = saved[i]; });
+        }
+        window.addEventListener('resize', () => { const s = document.querySelector('.slide.active[data-live="stats"]'); if (s && live) fitStats(s); });
+
         function countUp(el, target, decimals = 0) {
             const t0 = performance.now(), dur = 1600;
             const step = now => {
@@ -550,6 +567,7 @@
         function onLiveSlide(slide) {
             if (!live) return;
             if (slide.dataset.live === 'stats') {
+                fitStats(slide);
                 slide.querySelectorAll('.countup').forEach(el => setTimeout(() => countUp(el, live[el.dataset.key], +(el.dataset.decimals || 0)), 400));
                 monthlyChart?.destroy();
                 monthlyChart = new Chart(byId('liveMonthly'), {
